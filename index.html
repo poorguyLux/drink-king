@@ -183,6 +183,23 @@
   .sr-only{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
   footer{ color:var(--muted); font-size:12px; text-align:center; margin-top: 18px; }
 
+  /* 超时犯规弹窗 */
+  .modal-overlay{
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(20,20,20,.5);
+    display: none; align-items: center; justify-content: center; padding: 24px;
+  }
+  .modal-overlay.show{ display: flex; animation: fade .18s ease both; }
+  .modal-box{
+    background: var(--bg); border-radius: 18px; padding: 26px 24px;
+    width: 100%; max-width: 360px; text-align: center; box-shadow: var(--shadow);
+    animation: pop .3s cubic-bezier(.2,.9,.25,1.4) both;
+  }
+  .fm-title{ font-size: 22px; font-weight: 800; color: var(--danger); }
+  .fm-sub{ color: var(--muted); font-size: 14px; margin-top: 10px; line-height: 1.6; }
+  .fm-bonus{ margin-top: 16px; font-weight: 800; color: #7A5E12;
+    background: #FFF8E6; border: 1px solid #F0E3B8; border-radius: 10px; padding: 12px; font-size: 15px; }
+
   @media (prefers-reduced-motion: reduce){
     *{ animation: none !important; transition: none !important; }
   }
@@ -363,6 +380,14 @@
   <footer>越接近 10.000 秒越强 · 数字露在外面，真要较真就让前几名现场决赛 😼</footer>
 </div>
 
+<!-- 超时犯规弹窗：必须点击 / 空格确认后才能开始下一次 -->
+<div id="fail-modal" class="modal-overlay" role="alertdialog" aria-modal="true" aria-labelledby="fail-modal-text">
+  <div class="modal-box">
+    <div id="fail-modal-text"></div>
+    <button class="btn primary block" id="fail-modal-ok" style="margin-top:18px;">知道了（空格 / 点击关闭）</button>
+  </div>
+</div>
+
 <!-- Supabase JS（CDN）。没配置时不影响自由练习。 -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
@@ -439,8 +464,32 @@ function evaluate(diffMs){
 }
 
 /* ============================================================================
+   超时犯规弹窗管理：打开后必须确认（点击/空格）才会执行 ackFn，再开始下一次
+   ============================================================================ */
+let _failAck = null;   // 待执行的确认回调（关闭弹窗后调用，通常是 reset()）
+const FailModal = {
+  open(html, ackFn){
+    $('fail-modal-text').innerHTML = html;
+    $('fail-modal').classList.add('show');
+    _failAck = ackFn || null;
+    setTimeout(() => $('fail-modal-ok').focus(), 0);
+  },
+  append(html){ if (FailModal.isOpen()) $('fail-modal-text').innerHTML += html; },
+  isOpen(){ return $('fail-modal').classList.contains('show'); },
+  dismiss(){
+    if (!FailModal.isOpen()) return false;
+    $('fail-modal').classList.remove('show');
+    const fn = _failAck; _failAck = null;
+    if (fn) fn();
+    return true;
+  },
+};
+$('fail-modal-ok').addEventListener('click', () => FailModal.dismiss());
+$('fail-modal').addEventListener('click', (e) => { if (e.target.id === 'fail-modal') FailModal.dismiss(); });
+
+/* ============================================================================
    计时器引擎（一个状态机，被练习/挑战两处复用）
-   状态: idle -> running -> stopped -> (reset) idle
+   状态: idle -> running -> stopped/failed -> (reset) idle
    ============================================================================ */
 function makeTimer({ timerEl, verdictEl, buttonEl, onStop }){
   let state = 'idle';
@@ -460,8 +509,8 @@ function makeTimer({ timerEl, verdictEl, buttonEl, onStop }){
 
   function setButton(){
     buttonEl.classList.toggle('running', state === 'running');
-    const labelMap = { idle:'开始', running:'停止', stopped:'开始' };
-    buttonEl.firstChild.textContent = labelMap[state] + ' ';
+    const labelMap = { idle:'开始', running:'停止', stopped:'开始', failed:'开始' };
+    buttonEl.firstChild.textContent = (labelMap[state] || '开始') + ' ';
   }
 
   function start(){
@@ -478,16 +527,23 @@ function makeTimer({ timerEl, verdictEl, buttonEl, onStop }){
 
   function stop(overtime){
     if (state !== 'running') return;
-    state = 'stopped';
     cancelAnimationFrame(raf);
     let ms = Math.round(performance.now() - t0);     // 计分用整毫秒
     const failed = !!overtime || ms > TARGET_MS;     // 超过 10 秒 = 犯规
     if (failed){
+      state = 'failed';                              // 需确认弹窗后才能继续
       ms = TARGET_MS;
       renderTimer(timerEl, TARGET_MS);
       showFail();
       alarm();
+      // 弹窗：必须点击/空格确认后才 reset，避免“按晚了立刻又开始下一次”
+      FailModal.open(
+        '<div class="fm-title">💥 超时犯规！</div>' +
+        '<div class="fm-sub">你按下时已经冲过 10 秒，这次不算。<br>要停在 <b>10.000 秒以内</b> 才有效。</div>',
+        reset
+      );
     } else {
+      state = 'stopped';
       renderTimer(timerEl, ms);
       showVerdict(ms - TARGET_MS);
     }
@@ -544,6 +600,7 @@ function makeTimer({ timerEl, verdictEl, buttonEl, onStop }){
     if (state === 'idle') start();
     else if (state === 'running') stop(false);
     else if (state === 'stopped') { /* stopped 时按钮充当“再来” */ reset(); start(); }
+    else if (state === 'failed') { /* 犯规后须先确认弹窗，这里不响应 */ FailModal.dismiss(); }
   }
 
   // 按钮按压动画 + 点击
@@ -583,7 +640,16 @@ $('go-challenge').addEventListener('click', () => { refreshShareLinksFromState()
    - 长按连发只认第一下（event.repeat）
    ============================================================================ */
 window.addEventListener('keydown', (e) => {
-  if (e.code !== 'Space' && e.key !== ' ') return;
+  const isSpace = e.code === 'Space' || e.key === ' ';
+  const isConfirm = isSpace || e.key === 'Enter' || e.key === 'Escape';
+
+  // 犯规弹窗打开时：空格/回车/Esc 仅用于“确认关闭”，不触发其它任何操作
+  if (FailModal.isOpen()){
+    if (isConfirm){ e.preventDefault(); if (!e.repeat) FailModal.dismiss(); }
+    return;
+  }
+
+  if (!isSpace) return;
   // 别打断正在输入名字/房间号
   const tag = (document.activeElement && document.activeElement.tagName) || '';
   if (tag === 'INPUT' || tag === 'TEXTAREA') return;
@@ -722,8 +788,7 @@ function maybeGrantBonus(attempts, bestDiff){
   if (!room.bonus && attempts >= CONFIG.ATTEMPTS && bestDiff == null){
     room.bonus = true;
     localStorage.setItem(bonusKey(room.code, room.name), '1');
-    setTimeout(() => alert(CONFIG.BONUS_MESSAGE), 60);
-    return true;
+    return true;   // 由调用方决定怎么提示（弹窗内追加 / alert）
   }
   return false;
 }
@@ -747,8 +812,9 @@ const challengeTimer = makeTimer({
     try {
       const res = await dbSubmitAttempt(room.code, room.name, failed ? null : { diffMs, rawMs });
       setLocalAttempts(room.code, room.name, res.attempts);
-      // 基础机会全犯规则补送一次（会弹提示），此时不锁定
+      // 基础机会全犯规则补送一次，此时不锁定；提示直接追加进刚弹出的犯规弹窗
       const granted = maybeGrantBonus(res.attempts, res.bestDiff);
+      if (granted) FailModal.append('<div class="fm-bonus">' + CONFIG.BONUS_MESSAGE + '<br><span style="font-weight:600;font-size:13px;">已额外补送 1 次机会</span></div>');
       updateAttemptsUI(res.attempts, res.bestDiff, res.bestRaw);
       if (!granted && res.attempts >= effectiveCap()) lockRoom();
       await loadLeaderboard();
@@ -815,8 +881,8 @@ async function enterRoom({ code, name, isHost, hostToken }){
     applyClosedState(r ? r.status === 'closed' : false);
   } catch(err){ console.error(err); }
 
-  // 重进时若基础机会已全犯规，补送机会（含弹窗）
-  maybeGrantBonus(used, bestDiff);
+  // 重进时若基础机会已全犯规，补送机会
+  if (maybeGrantBonus(used, bestDiff)) setTimeout(() => alert(CONFIG.BONUS_MESSAGE), 60);
   updateAttemptsUI(used, bestDiff, bestRaw);
   if (used >= effectiveCap()) lockRoom();
 
