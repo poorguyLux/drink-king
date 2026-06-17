@@ -84,6 +84,16 @@
   .tier-great .line{ color: #2E9E97; }
   .tier-ok .line{ color: var(--ink); }
   .tier-bad .line{ color: var(--danger); }
+  .tier-fail .line{ color: var(--danger); }
+
+  /* 超时报警：计时数字变红 + 抖动 */
+  .timer.alarm{ color: var(--danger); animation: shake .42s cubic-bezier(.36,.07,.19,.97) both; }
+  @keyframes shake{
+    10%,90%{ transform: translateX(-2px); }
+    20%,80%{ transform: translateX(4px); }
+    30%,50%,70%{ transform: translateX(-8px); }
+    40%,60%{ transform: translateX(8px); }
+  }
 
   /* 大空格键按钮 */
   .spacebar{
@@ -191,29 +201,29 @@
     <div class="home-modes">
       <button class="card mode-tile" id="go-practice">
         <div class="emoji">🎯</div>
-        <h3>自由练习</h3>
+        <h3>拿我练手</h3>
         <p>不记名、不上榜，随便玩。试试你停在 10.000 秒有多准。</p>
       </button>
       <button class="card mode-tile" id="go-challenge">
         <div class="emoji">👑</div>
-        <h3>挑战赛</h3>
-        <p>建房间、发链接，每人 3 次取最好成绩。前两名当『饮料王』，决定下半个月喝什么。</p>
+        <h3>大乱斗</h3>
+        <p>建房间、发链接，每人 3 次取最好成绩。第一名『饮料王』的所属部门决定本次饮料采购品类——你喝什么我们跟着喝什么。具体采购预算及细节由 Lux 对接。</p>
       </button>
     </div>
-    <p class="hint">规则：按一下开始计时，再按一下停止。越接近 <b>10.000 秒</b> 越强；提前或超过都按差值算。</p>
+    <p class="hint">规则：按一下开始计时，再按一下停止。<b>不能超过 10 秒</b>——越接近 <b>10.000 秒</b> 越强；一旦冲过 10 秒就「犯规」，本次不算。</p>
   </section>
 
   <!-- ============================ 自由练习 ============================ -->
   <section id="view-practice" class="view">
     <div class="topbar">
       <button class="btn ghost" data-home>← 返回</button>
-      <strong>自由练习</strong>
+      <strong>拿我练手</strong>
     </div>
 
     <div class="card">
       <div class="timer-wrap">
         <div class="timer" id="p-timer">0.000<span class="unit">秒</span></div>
-        <div class="target-hint">目标：停在 <b>10.000</b> 秒</div>
+        <div class="target-hint">目标：停在 <b>10.000</b> 秒以内，越接近越强（超过即犯规）</div>
       </div>
       <div class="verdict" id="p-verdict" aria-live="polite"></div>
 
@@ -237,7 +247,7 @@
   <section id="view-lobby" class="view">
     <div class="topbar">
       <button class="btn ghost" data-home>← 返回</button>
-      <strong>挑战赛</strong>
+      <strong>大乱斗</strong>
     </div>
 
     <div class="card">
@@ -275,7 +285,7 @@
   <section id="view-room" class="view">
     <div class="topbar">
       <button class="btn ghost" data-home>← 退出</button>
-      <strong>挑战赛房间</strong>
+      <strong>大乱斗房间</strong>
     </div>
 
     <div class="card">
@@ -298,7 +308,7 @@
         <small>按 空格键 / 点这里</small>
       </button>
 
-      <p class="hint" id="c-lock-hint" hidden>你的 3 次机会已用完，已记录最好成绩。看排行榜吧 👇</p>
+      <p class="hint" id="c-lock-hint" hidden>你的机会已用完，已记录最好成绩。看排行榜吧 👇</p>
     </div>
 
     <!-- 分享链接（房主可见） -->
@@ -335,7 +345,18 @@
         <button class="btn danger" id="host-newround">开新一局（清空）</button>
       </div>
       <div class="ok-msg" id="host-msg"></div>
-      <p class="hint">结算会冻结排行榜并钦定前两名。开新一局会清空本房间成绩、重置每个人的 3 次机会。</p>
+      <p class="hint">结算会冻结排行榜并钦定第一名『饮料王』，同时生成可公示到群里的榜单文案。开新一局会清空本房间成绩、重置每个人的机会。</p>
+    </div>
+
+    <!-- 结算后：可公示到群里的榜单文案 -->
+    <div class="card" id="announce-card" hidden>
+      <div class="lb-head">
+        <h3>📣 公示文案</h3>
+        <button class="btn primary" data-copy="announce-text">复制全文</button>
+      </div>
+      <p class="hint" style="margin-top:0;">复制下面这段，直接发到群里公布饮料王。</p>
+      <textarea id="announce-text" readonly rows="12"
+        style="width:100%;border:1px solid var(--line);border-radius:10px;padding:12px;font-size:14px;line-height:1.7;font-family:inherit;color:var(--ink);background:var(--soft);resize:vertical;"></textarea>
     </div>
   </section>
 
@@ -355,9 +376,14 @@ const CONFIG = {
 
   TARGET_SECONDS: 10,     // 目标秒数
   DECIMALS: 3,            // 显示小数位（可改 4，但第 4 位只是装饰，计时精度按 3 位算分）
-  ATTEMPTS: 3,            // 挑战赛每人机会数
-  WINNER_COUNT: 2,        // 前几名当『饮料王』
+  ATTEMPTS: 3,            // 挑战赛每人基础机会数
+  WINNER_COUNT: 1,        // 取前几名当『饮料王』（按新规则=第一名）
   ROOM_CODE_LEN: 4,       // 房间号位数（4 更好念 / 6 更不易撞，改这个数字即可）
+
+  // 新规则：计时不能超过 10 秒，冲过即「犯规」本次作废。
+  // 若 ATTEMPTS 次机会全部犯规（一次有效成绩都没有），额外补送 BONUS_ATTEMPTS 次机会。
+  BONUS_ATTEMPTS: 1,
+  BONUS_MESSAGE: '看你这么菜，再给你一次机会 🙄',
 
   BRAND_TEAL: '#35B8B0',  // 主色 / 计时数字颜色
   INK: '#1A1A1A',         // 标题深色
@@ -377,6 +403,8 @@ const CONFIG = {
     great: ['稳如老狗，时间感拉满', '身体里是有节拍器吧', '饮料王预定了属于是'],
     ok:    ['还行，没翻车但也没惊艳', '中规中矩，离封王还差点意思', '时间它不太听你的'],
     bad:   ['你这是按了个寂寞？', '10 秒在你这儿是个抽象概念是吧', '心里默数的那个数，它骗了你', '这成绩，饮料还是让别人定吧'],
+    // 超时犯规（>10 秒）专用文案
+    fail:  ['💥 踩过线了，这次不算！', '超过 10 秒，犯规～', '手太慢，10 秒线都守不住', '别贪心，10 秒就得收手'],
   },
 };
 
@@ -421,6 +449,11 @@ function makeTimer({ timerEl, verdictEl, buttonEl, onStop }){
 
   function loop(){
     const ms = performance.now() - t0;
+    if (ms >= TARGET_MS){          // 冲过 10 秒：封顶在 10.000 并判犯规
+      renderTimer(timerEl, TARGET_MS);
+      stop(true);
+      return;
+    }
     renderTimer(timerEl, ms);
     raf = requestAnimationFrame(loop);
   }
@@ -436,23 +469,30 @@ function makeTimer({ timerEl, verdictEl, buttonEl, onStop }){
     state = 'running';
     verdictEl.innerHTML = '';
     verdictEl.className = 'verdict';
+    timerEl.classList.remove('alarm');
     t0 = performance.now();
     renderTimer(timerEl, 0);
     raf = requestAnimationFrame(loop);
     setButton();
   }
 
-  function stop(){
+  function stop(overtime){
     if (state !== 'running') return;
     state = 'stopped';
     cancelAnimationFrame(raf);
-    const elapsed = performance.now() - t0;
-    const ms = Math.round(elapsed);                 // 计分用整毫秒
-    renderTimer(timerEl, ms);
-    const diff = ms - TARGET_MS;                     // 带符号差（毫秒）
-    showVerdict(diff);
+    let ms = Math.round(performance.now() - t0);     // 计分用整毫秒
+    const failed = !!overtime || ms > TARGET_MS;     // 超过 10 秒 = 犯规
+    if (failed){
+      ms = TARGET_MS;
+      renderTimer(timerEl, TARGET_MS);
+      showFail();
+      alarm();
+    } else {
+      renderTimer(timerEl, ms);
+      showVerdict(ms - TARGET_MS);
+    }
     setButton();
-    if (onStop) onStop({ rawMs: ms, diffMs: Math.abs(diff), signedDiffMs: diff });
+    if (onStop) onStop({ rawMs: ms, diffMs: Math.abs(ms - TARGET_MS), signedDiffMs: ms - TARGET_MS, failed });
   }
 
   function showVerdict(signedDiff){
@@ -466,9 +506,35 @@ function makeTimer({ timerEl, verdictEl, buttonEl, onStop }){
       (signedDiff === 0 ? '正好命中 🎯' : (sign + ' ' + absSec + ' 秒')) + '</div>';
   }
 
+  function showFail(){
+    verdictEl.className = 'verdict pop tier-fail';
+    verdictEl.innerHTML =
+      '<div class="line">' + pick(CONFIG.VERDICTS.fail) + '</div>' +
+      '<div class="detail">冲过 10 秒了，本次不算 · 要停在 10.000 秒以内</div>';
+  }
+
+  // 报警：抖动 + 蜂鸣（蜂鸣尽力而为，失败静默）
+  function alarm(){
+    timerEl.classList.remove('alarm');
+    void timerEl.offsetWidth;          // 重置动画
+    timerEl.classList.add('alarm');
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      const ac = new AC();
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = 'square'; o.frequency.value = 880;
+      g.gain.value = 0.06;
+      o.connect(g); g.connect(ac.destination);
+      o.start();
+      o.stop(ac.currentTime + 0.18);
+      o.onended = () => ac.close();
+    } catch (e) { /* 静默 */ }
+  }
+
   function reset(){
     state = 'idle';
     cancelAnimationFrame(raf);
+    timerEl.classList.remove('alarm');
     renderTimer(timerEl, 0);
     setButton();
   }
@@ -476,7 +542,7 @@ function makeTimer({ timerEl, verdictEl, buttonEl, onStop }){
   // 一个动作：按状态切换
   function toggle(){
     if (state === 'idle') start();
-    else if (state === 'running') stop();
+    else if (state === 'running') stop(false);
     else if (state === 'stopped') { /* stopped 时按钮充当“再来” */ reset(); start(); }
   }
 
@@ -541,8 +607,9 @@ const practiceTimer = makeTimer({
   timerEl: $('p-timer'),
   verdictEl: $('p-verdict'),
   buttonEl: $('p-space'),
-  onStop: ({ rawMs }) => {
+  onStop: ({ rawMs, failed }) => {
     $('p-again').hidden = false;
+    if (failed) return;                  // 超时犯规不计入本机最佳
     // 本机最佳：离目标差最小者
     const prev = localStorage.getItem(BEST_KEY);
     const better = prev == null || Math.abs(rawMs - TARGET_MS) < Math.abs(Number(prev) - TARGET_MS);
@@ -580,13 +647,15 @@ async function dbGetMyScore(code, name){
   if (error) throw error;
   return data;
 }
-/* best-of-N：读旧记录 -> 算最好 -> upsert */
-async function dbSubmitScore(code, name, diffMs, rawMs){
+/* 记一次挑战：读旧记录 -> 次数+1 -> 仅当本次有效(未犯规)才更新最好成绩 -> upsert
+   score 传 {diffMs, rawMs} 表示有效成绩；传 null 表示超时犯规（只占次数，不计成绩）。 */
+async function dbSubmitAttempt(code, name, score){
   const prev = await dbGetMyScore(code, name);
   const attempts = (prev ? prev.attempts : 0) + 1;
-  let bestDiff = diffMs, bestRaw = rawMs;
-  if (prev && prev.best_diff_ms != null && prev.best_diff_ms <= diffMs){
-    bestDiff = prev.best_diff_ms; bestRaw = prev.best_raw_ms;
+  let bestDiff = prev ? prev.best_diff_ms : null;
+  let bestRaw  = prev ? prev.best_raw_ms  : null;
+  if (score && (bestDiff == null || score.diffMs < bestDiff)){
+    bestDiff = score.diffMs; bestRaw = score.rawMs;
   }
   const { error } = await sb.from('scores').upsert(
     { room_code: code, name, best_diff_ms: bestDiff, best_raw_ms: bestRaw, attempts },
@@ -596,10 +665,10 @@ async function dbSubmitScore(code, name, diffMs, rawMs){
   return { attempts, bestDiff, bestRaw };
 }
 async function dbLeaderboard(code){
-  // attempts>0 才显示（开新一局是把 attempts 重置为 0 来“清空”）
+  // 只列有有效成绩的人（best_diff_ms 不为 null）；全程犯规 / 开新一局清空者不进榜
   const { data, error } = await sb.from('scores')
     .select('name,best_diff_ms,best_raw_ms,attempts')
-    .eq('room_code', code).gt('attempts', 0)
+    .eq('room_code', code).gt('attempts', 0).not('best_diff_ms', 'is', null)
     .order('best_diff_ms', { ascending: true });
   if (error) throw error;
   return data || [];
@@ -636,14 +705,28 @@ function genToken(){
 /* ============================================================================
    房间状态 + 本机记忆
    ============================================================================ */
-let room = { code: null, name: null, isHost: false, hostToken: null };
-let roomLocked = false;   // 3 次用完
+let room = { code: null, name: null, isHost: false, hostToken: null, bonus: false };
+let roomLocked = false;   // 机会用完
 let roomClosed = false;   // 已结算
 let pollTimer = null;
+let lastRows = [];        // 最近一次排行榜数据（用于生成公示文案）
 
 const attemptsKey = (code, name) => `qiwang_attempts_${code}_${name}`;
 function getLocalAttempts(code, name){ return Number(localStorage.getItem(attemptsKey(code, name)) || 0); }
 function setLocalAttempts(code, name, n){ localStorage.setItem(attemptsKey(code, name), String(n)); }
+
+const bonusKey = (code, name) => `qiwang_bonus_${code}_${name}`;
+function effectiveCap(){ return CONFIG.ATTEMPTS + (room.bonus ? CONFIG.BONUS_ATTEMPTS : 0); }
+/* 基础机会全部犯规（无有效成绩）→ 补送一次机会，并弹提示。已补送过则不再补。 */
+function maybeGrantBonus(attempts, bestDiff){
+  if (!room.bonus && attempts >= CONFIG.ATTEMPTS && bestDiff == null){
+    room.bonus = true;
+    localStorage.setItem(bonusKey(room.code, room.name), '1');
+    setTimeout(() => alert(CONFIG.BONUS_MESSAGE), 60);
+    return true;
+  }
+  return false;
+}
 
 /* 链接构造 */
 function baseUrl(){ return location.origin + location.pathname; }
@@ -657,15 +740,17 @@ const challengeTimer = makeTimer({
   timerEl: $('c-timer'),
   verdictEl: $('c-verdict'),
   buttonEl: $('c-space'),
-  onStop: async ({ rawMs, diffMs }) => {
+  onStop: async ({ rawMs, diffMs, failed }) => {
     if (roomLocked || roomClosed) return;
     const used = getLocalAttempts(room.code, room.name);
-    if (used >= CONFIG.ATTEMPTS){ lockRoom(); return; }
+    if (used >= effectiveCap()){ lockRoom(); return; }
     try {
-      const res = await dbSubmitScore(room.code, room.name, diffMs, rawMs);
+      const res = await dbSubmitAttempt(room.code, room.name, failed ? null : { diffMs, rawMs });
       setLocalAttempts(room.code, room.name, res.attempts);
+      // 基础机会全犯规则补送一次（会弹提示），此时不锁定
+      const granted = maybeGrantBonus(res.attempts, res.bestDiff);
       updateAttemptsUI(res.attempts, res.bestDiff, res.bestRaw);
-      if (res.attempts >= CONFIG.ATTEMPTS) lockRoom();
+      if (!granted && res.attempts >= effectiveCap()) lockRoom();
       await loadLeaderboard();
     } catch (err){
       console.error(err);
@@ -675,8 +760,8 @@ const challengeTimer = makeTimer({
 });
 
 function updateAttemptsUI(used, bestDiff, bestRaw){
-  $('room-attempts').textContent = used + '/' + CONFIG.ATTEMPTS;
-  if (bestRaw != null) $('room-best').textContent = fmtMs(bestRaw) + ' 秒';
+  $('room-attempts').textContent = used + '/' + effectiveCap();
+  $('room-best').textContent = (bestRaw != null) ? (fmtMs(bestRaw) + ' 秒') : '—';
 }
 function lockRoom(){
   roomLocked = true;
@@ -694,11 +779,13 @@ function applyClosedState(closed){
    进入房间
    ============================================================================ */
 async function enterRoom({ code, name, isHost, hostToken }){
-  room = { code, name, isHost: !!isHost, hostToken: hostToken || null };
+  room = { code, name, isHost: !!isHost, hostToken: hostToken || null,
+           bonus: localStorage.getItem(bonusKey(code, name)) === '1' };
   roomLocked = false; roomClosed = false;
   challengeTimer.reset();
   $('c-space').disabled = false;
   $('c-lock-hint').hidden = true;
+  $('announce-card').hidden = true;
 
   $('room-code').textContent = code;
   $('room-name').textContent = name;
@@ -715,20 +802,23 @@ async function enterRoom({ code, name, isHost, hostToken }){
 
   // 恢复本机已用次数 + 当前最好成绩
   let used = getLocalAttempts(code, name);
+  let bestDiff = null, bestRaw = null;
   try {
     const mine = await dbGetMyScore(code, name);
     if (mine){
       used = Math.max(used, mine.attempts || 0);
+      bestDiff = mine.best_diff_ms; bestRaw = mine.best_raw_ms;
       setLocalAttempts(code, name, used);
-      updateAttemptsUI(used, mine.best_diff_ms, mine.best_raw_ms);
-    } else {
-      updateAttemptsUI(used, null, null);
     }
+    updateAttemptsUI(used, bestDiff, bestRaw);
     const r = await dbGetRoom(code);
     applyClosedState(r ? r.status === 'closed' : false);
   } catch(err){ console.error(err); }
 
-  if (used >= CONFIG.ATTEMPTS) lockRoom();
+  // 重进时若基础机会已全犯规，补送机会（含弹窗）
+  maybeGrantBonus(used, bestDiff);
+  updateAttemptsUI(used, bestDiff, bestRaw);
+  if (used >= effectiveCap()) lockRoom();
 
   show('room');
   await loadLeaderboard();
@@ -742,8 +832,37 @@ async function loadLeaderboard(){
   if (!sb) return;
   try {
     const rows = await dbLeaderboard(room.code);
+    lastRows = rows;
     renderLeaderboard(rows);
+    // 已结算 + 房主：生成/刷新可公示的榜单文案
+    if (roomClosed && room.isHost){
+      $('announce-text').value = buildAnnouncement(rows);
+      $('announce-card').hidden = false;
+    }
   } catch(err){ console.error(err); }
+}
+
+/* 生成可直接粘到群里的公示文案 */
+function buildAnnouncement(rows){
+  const L = [];
+  L.push('🥤 AINFINITY 第一届『饮料王』争霸赛 · 最终榜单 🥤');
+  L.push('（房间号 ' + room.code + '）');
+  L.push('');
+  if (!rows.length){
+    L.push('本局没有有效成绩，改天再战 😴');
+    return L.join('\n');
+  }
+  rows.forEach((r, i) => {
+    const medal = i === 0 ? '🏆' : (i === 1 ? '🥈' : (i === 2 ? '🥉' : '　' + (i + 1) + '.'));
+    L.push(medal + ' ' + r.name + '  ' + fmtMs(r.best_raw_ms) + ' 秒（差 ' +
+      (r.best_diff_ms / 1000).toFixed(CONFIG.DECIMALS) + ' 秒）');
+  });
+  L.push('');
+  const champ = rows[0].name;
+  L.push('👑 恭喜 ' + champ + ' 当选本届『饮料王』！');
+  L.push('本次饮料采购品类由 ' + champ + ' 的所属部门决定——你喝什么，我们跟着喝什么。');
+  L.push('具体采购预算及细节由 Lux 对接。');
+  return L.join('\n');
 }
 function renderLeaderboard(rows){
   const box = $('lb-body');
@@ -857,23 +976,29 @@ $('host-close').addEventListener('click', async () => {
   try {
     await dbCloseRoom(room.code);
     applyClosedState(true);
-    await loadLeaderboard();
-    msg.textContent = '已结算，前 ' + CONFIG.WINNER_COUNT + ' 名就是『饮料王』🥤';
+    await loadLeaderboard();   // 会自动生成「公示文案」卡片
+    const champ = lastRows[0] ? lastRows[0].name : null;
+    msg.textContent = champ ? ('已结算！第一名『饮料王』是 ' + champ + ' 🥤 公示文案已生成 👇')
+                            : '已结算（本局暂无有效成绩）。';
+    if (!$('announce-card').hidden) $('announce-card').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   } catch(err){ console.error(err); msg.textContent = '结算失败：' + (err.message||err); }
 });
 
 $('host-newround').addEventListener('click', async () => {
   if (!room.isHost) return;
   const msg = $('host-msg'); msg.textContent = '';
-  if (!confirm('开新一局会清空本房间所有成绩、重置每人 3 次机会。确定？')) return;
+  if (!confirm('开新一局会清空本房间所有成绩、重置每人的机会。确定？')) return;
   try {
     await dbNewRound(room.code);
-    // 清掉本机所有该房间的次数记忆
+    // 清掉本机所有该房间的次数 / 补送机会记忆
     for (let i = localStorage.length - 1; i >= 0; i--){
       const k = localStorage.key(i);
-      if (k && k.startsWith('qiwang_attempts_' + room.code + '_')) localStorage.removeItem(k);
+      if (k && (k.startsWith('qiwang_attempts_' + room.code + '_') ||
+                k.startsWith('qiwang_bonus_' + room.code + '_'))) localStorage.removeItem(k);
     }
+    room.bonus = false;
     roomLocked = false; $('c-space').disabled = false; $('c-lock-hint').hidden = true;
+    $('announce-card').hidden = true;
     applyClosedState(false);
     setLocalAttempts(room.code, room.name, 0);
     updateAttemptsUI(0, null, null);
