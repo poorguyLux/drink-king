@@ -86,14 +86,19 @@
   .tier-bad .line{ color: var(--danger); }
   .tier-fail .line{ color: var(--danger); }
 
-  /* 超时报警：计时数字变红 + 抖动 */
-  .timer.alarm{ color: var(--danger); animation: shake .42s cubic-bezier(.36,.07,.19,.97) both; }
-  @keyframes shake{
-    10%,90%{ transform: translateX(-2px); }
-    20%,80%{ transform: translateX(4px); }
-    30%,50%,70%{ transform: translateX(-8px); }
-    40%,60%{ transform: translateX(8px); }
-  }
+  /* 超过 10 秒：计时数字 / 结果标红（不记入成绩） */
+  .timer.over{ color: var(--danger); }
+
+  /* 我的成绩记录 */
+  .hist-list{ display:flex; flex-direction:column; gap:6px; }
+  .hist-row{ display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:9px 12px; background:var(--soft); border-radius:10px; font-size:14px; }
+  .hist-row .hist-n{ color:var(--muted); font-weight:700; }
+  .hist-row .hist-v{ font-variant-numeric:tabular-nums; font-weight:700; }
+  .hist-row.over{ background:#FDECEC; }
+  .hist-row.over .hist-v{ color:var(--danger); }
+  .hist-row.best{ background:rgba(53,184,176,.12); }
+  .hist-row.best .hist-v{ color:var(--brand-teal); }
 
   /* 大空格键按钮 */
   .spacebar{
@@ -316,7 +321,7 @@
 
       <div class="timer-wrap">
         <div class="timer" id="c-timer">0.000<span class="unit">秒</span></div>
-        <div class="target-hint">目标：停在 <b>10.000</b> 秒 · 当前最好 <b id="room-best">—</b></div>
+        <div class="target-hint">越接近 <b>10.000</b> 秒越强，超过 10 秒不计成绩 · 当前最好 <b id="room-best">—</b></div>
       </div>
       <div class="verdict" id="c-verdict" aria-live="polite"></div>
 
@@ -326,6 +331,12 @@
       </button>
 
       <p class="hint" id="c-lock-hint" hidden>你的机会已用完，已记录最好成绩。看排行榜吧 👇</p>
+    </div>
+
+    <!-- 我的成绩记录（仅本机本人，含超时红色不计） -->
+    <div class="card">
+      <div class="lb-head"><h3>🧾 我的成绩记录</h3></div>
+      <div id="my-history" class="hist-list"></div>
     </div>
 
     <!-- 分享链接（房主可见） -->
@@ -497,12 +508,8 @@ function makeTimer({ timerEl, verdictEl, buttonEl, onStop }){
   let raf = 0;
 
   function loop(){
-    const ms = performance.now() - t0;
-    if (ms >= TARGET_MS){          // 冲过 10 秒：封顶在 10.000 并判犯规
-      renderTimer(timerEl, TARGET_MS);
-      stop(true);
-      return;
-    }
+    const ms = performance.now() - t0;          // 不再封顶：超过 10 秒继续走
+    timerEl.classList.toggle('over', ms > TARGET_MS);  // 超过 10 秒数字标红
     renderTimer(timerEl, ms);
     raf = requestAnimationFrame(loop);
   }
@@ -518,35 +525,22 @@ function makeTimer({ timerEl, verdictEl, buttonEl, onStop }){
     state = 'running';
     verdictEl.innerHTML = '';
     verdictEl.className = 'verdict';
-    timerEl.classList.remove('alarm');
+    timerEl.classList.remove('over');
     t0 = performance.now();
     renderTimer(timerEl, 0);
     raf = requestAnimationFrame(loop);
     setButton();
   }
 
-  function stop(overtime){
+  function stop(){
     if (state !== 'running') return;
     cancelAnimationFrame(raf);
-    let ms = Math.round(performance.now() - t0);     // 计分用整毫秒
-    const failed = !!overtime || ms > TARGET_MS;     // 超过 10 秒 = 犯规
-    if (failed){
-      state = 'failed';                              // 需确认弹窗后才能继续
-      ms = TARGET_MS;
-      renderTimer(timerEl, TARGET_MS);
-      showFail();
-      alarm();
-      // 弹窗：必须点击/空格确认后才 reset，避免“按晚了立刻又开始下一次”
-      FailModal.open(
-        '<div class="fm-title">💥 超时犯规！</div>' +
-        '<div class="fm-sub">你按下时已经冲过 10 秒，这次不算。<br>要停在 <b>10.000 秒以内</b> 才有效。</div>',
-        reset
-      );
-    } else {
-      state = 'stopped';
-      renderTimer(timerEl, ms);
-      showVerdict(ms - TARGET_MS);
-    }
+    const ms = Math.round(performance.now() - t0);   // 真实毫秒
+    const failed = ms > TARGET_MS;                    // 超过 10 秒 = 不计成绩
+    state = 'stopped';
+    timerEl.classList.toggle('over', failed);         // 结果标红（超时）
+    renderTimer(timerEl, ms);
+    if (failed) showFail(ms); else showVerdict(ms - TARGET_MS);
     setButton();
     if (onStop) onStop({ rawMs: ms, diffMs: Math.abs(ms - TARGET_MS), signedDiffMs: ms - TARGET_MS, failed });
   }
@@ -562,45 +556,35 @@ function makeTimer({ timerEl, verdictEl, buttonEl, onStop }){
       (signedDiff === 0 ? '正好命中 🎯' : (sign + ' ' + absSec + ' 秒')) + '</div>';
   }
 
-  function showFail(){
+  // 超过 10 秒的“新一层级”评价（红色，不记入成绩）
+  function showFail(ms){
     verdictEl.className = 'verdict pop tier-fail';
     verdictEl.innerHTML =
       '<div class="line">' + pick(CONFIG.VERDICTS.fail) + '</div>' +
-      '<div class="detail">冲过 10 秒了，本次不算 · 要停在 10.000 秒以内</div>';
-  }
-
-  // 报警：抖动 + 蜂鸣（蜂鸣尽力而为，失败静默）
-  function alarm(){
-    timerEl.classList.remove('alarm');
-    void timerEl.offsetWidth;          // 重置动画
-    timerEl.classList.add('alarm');
-    try {
-      const AC = window.AudioContext || window.webkitAudioContext;
-      const ac = new AC();
-      const o = ac.createOscillator(), g = ac.createGain();
-      o.type = 'square'; o.frequency.value = 880;
-      g.gain.value = 0.06;
-      o.connect(g); g.connect(ac.destination);
-      o.start();
-      o.stop(ac.currentTime + 0.18);
-      o.onended = () => ac.close();
-    } catch (e) { /* 静默 */ }
+      '<div class="detail">本次 ' + fmtMs(ms) + ' 秒 · 超过 10 秒，不记入成绩</div>';
   }
 
   function reset(){
     state = 'idle';
     cancelAnimationFrame(raf);
-    timerEl.classList.remove('alarm');
+    timerEl.classList.remove('over');
     renderTimer(timerEl, 0);
     setButton();
+  }
+
+  // 暂停在“需确认”状态：弹窗确认（点击/空格）后才 reset，并执行 after 回调
+  function hold(html, after){
+    state = 'failed';
+    setButton();
+    FailModal.open(html, () => { reset(); if (after) after(); });
   }
 
   // 一个动作：按状态切换
   function toggle(){
     if (state === 'idle') start();
-    else if (state === 'running') stop(false);
+    else if (state === 'running') stop();
     else if (state === 'stopped') { /* stopped 时按钮充当“再来” */ reset(); start(); }
-    else if (state === 'failed') { /* 犯规后须先确认弹窗，这里不响应 */ FailModal.dismiss(); }
+    else if (state === 'failed') { /* 需先确认弹窗，这里不响应 */ FailModal.dismiss(); }
   }
 
   // 按钮按压动画 + 点击
@@ -613,7 +597,7 @@ function makeTimer({ timerEl, verdictEl, buttonEl, onStop }){
   renderTimer(timerEl, 0);
 
   return {
-    toggle, reset,
+    toggle, reset, hold,
     getState: () => state,
     pressVisual: () => { buttonEl.classList.add('pressed'); setTimeout(()=>buttonEl.classList.remove('pressed'), 90); },
   };
@@ -675,7 +659,15 @@ const practiceTimer = makeTimer({
   buttonEl: $('p-space'),
   onStop: ({ rawMs, failed }) => {
     $('p-again').hidden = false;
-    if (failed) return;                  // 超时犯规不计入本机最佳
+    if (failed){
+      // 超时不计成绩；第一次超时弹框解释一次，之后只标红不再弹
+      if (localStorage.getItem('qiwang_practice_ot') !== '1'){
+        localStorage.setItem('qiwang_practice_ot', '1');
+        $('p-again').hidden = true;       // 由弹窗确认后再开始
+        practiceTimer.hold(explainOvertimeHtml(rawMs));
+      }
+      return;
+    }
     // 本机最佳：离目标差最小者
     const prev = localStorage.getItem(BEST_KEY);
     const better = prev == null || Math.abs(rawMs - TARGET_MS) < Math.abs(Number(prev) - TARGET_MS);
@@ -783,14 +775,47 @@ function setLocalAttempts(code, name, n){ localStorage.setItem(attemptsKey(code,
 
 const bonusKey = (code, name) => `qiwang_bonus_${code}_${name}`;
 function effectiveCap(){ return CONFIG.ATTEMPTS + (room.bonus ? CONFIG.BONUS_ATTEMPTS : 0); }
-/* 基础机会全部犯规（无有效成绩）→ 补送一次机会，并弹提示。已补送过则不再补。 */
-function maybeGrantBonus(attempts, bestDiff){
-  if (!room.bonus && attempts >= CONFIG.ATTEMPTS && bestDiff == null){
-    room.bonus = true;
-    localStorage.setItem(bonusKey(room.code, room.name), '1');
-    return true;   // 由调用方决定怎么提示（弹窗内追加 / alert）
-  }
-  return false;
+
+/* —— 本机成绩记录（含超时，超时标红不计成绩） —— */
+const histKey  = (code, name) => `qiwang_hist_${code}_${name}`;
+function getHistory(code, name){ try { return JSON.parse(localStorage.getItem(histKey(code, name)) || '[]'); } catch(e){ return []; } }
+function pushHistory(code, name, item){ const h = getHistory(code, name); h.push(item); localStorage.setItem(histKey(code, name), JSON.stringify(h)); }
+function historyHasValid(code, name){ return getHistory(code, name).some(x => !x.over); }
+/* 本机最好成绩（仅有效成绩里离 10 秒最近的真实毫秒），无则 null */
+function localBestRaw(code, name){
+  const valid = getHistory(code, name).filter(x => !x.over);
+  if (!valid.length) return null;
+  return valid.reduce((b, x) => Math.abs(x.ms - TARGET_MS) < Math.abs(b - TARGET_MS) ? x.ms : b, valid[0].ms);
+}
+function renderHistory(){
+  const h = getHistory(room.code, room.name);
+  const box = $('my-history');
+  if (!box) return;
+  if (!h.length){ box.innerHTML = '<div class="empty" style="padding:14px;">还没有记录，开始挑战吧 🥤</div>'; return; }
+  const bestMs = localBestRaw(room.code, room.name);
+  let bestMarked = false;
+  box.innerHTML = h.map(x => {
+    const isBest = !x.over && bestMs != null && x.ms === bestMs && !bestMarked;
+    if (isBest) bestMarked = true;
+    const cls = x.over ? 'over' : (isBest ? 'best' : '');
+    const tail = x.over ? ' · 超10秒不计' : (isBest ? ' · 当前最好' : '');
+    return '<div class="hist-row ' + cls + '"><span class="hist-n">第 ' + x.n + ' 次</span>' +
+           '<span class="hist-v">' + fmtMs(x.ms) + ' 秒' + tail + '</span></div>';
+  }).join('');
+}
+
+/* —— 第一次超时的解释（每人一次） —— */
+const firstOTKey = (code, name) => `qiwang_ot_${code}_${name}`;
+function explainOvertimeHtml(ms){
+  return '<div class="fm-title">⏱️ 超过 10 秒了</div>' +
+    '<div class="fm-sub">这次用了 <b>' + fmtMs(ms) + ' 秒</b>。<br>' +
+    '<b>超过 10 秒的结果不记入成绩</b>，只会在你的记录里标红留痕。<br>' +
+    '目标是停在 10.000 秒以内、越接近越强。<br>确认后开始下一次挑战。</div>';
+}
+function mercyHtml(prefix){
+  return (prefix || '<div class="fm-title">😼 机会用完了</div>') +
+    '<div class="fm-bonus">' + CONFIG.BONUS_MESSAGE + '<br>' +
+    '<span style="font-weight:600;font-size:13px;">三次都超过 10 秒、没有有效成绩，额外补送 1 次机会</span></div>';
 }
 
 /* 链接构造 */
@@ -807,16 +832,39 @@ const challengeTimer = makeTimer({
   buttonEl: $('c-space'),
   onStop: async ({ rawMs, diffMs, failed }) => {
     if (roomLocked || roomClosed) return;
-    const used = getLocalAttempts(room.code, room.name);
-    if (used >= effectiveCap()){ lockRoom(); return; }
+    const usedBefore = getLocalAttempts(room.code, room.name);
+    if (usedBefore >= effectiveCap()){ lockRoom(); return; }
+    const attemptNo = usedBefore + 1;
+
+    // 记入本机成绩记录（超时也记，标红不计成绩）
+    pushHistory(room.code, room.name, { n: attemptNo, ms: rawMs, over: failed });
+    setLocalAttempts(room.code, room.name, attemptNo);
+    renderHistory();
+    updateAttemptsUI(attemptNo, localBestRaw(room.code, room.name));
+
+    // 同步决定弹窗 / 补送（必须在任何 await 之前，挡住“确认前就开始下一次”）
+    let gateHtml = null;
+    if (failed && localStorage.getItem(firstOTKey(room.code, room.name)) !== '1'){
+      localStorage.setItem(firstOTKey(room.code, room.name), '1');
+      gateHtml = explainOvertimeHtml(rawMs);                 // 本人第一次超时：解释一次
+    }
+    let granted = false;
+    if (!room.bonus && attemptNo >= CONFIG.ATTEMPTS && !historyHasValid(room.code, room.name)){
+      granted = true; room.bonus = true;
+      localStorage.setItem(bonusKey(room.code, room.name), '1');
+      gateHtml = mercyHtml(gateHtml);                         // 补送（含可能的解释前缀）
+      updateAttemptsUI(attemptNo, localBestRaw(room.code, room.name));  // 刷新 n/上限
+    }
+    const willLock = !granted && attemptNo >= effectiveCap();
+    if (gateHtml){
+      challengeTimer.hold(gateHtml, () => { if (willLock) lockRoom(); });
+    } else if (willLock){
+      lockRoom();
+    }
+
+    // 落库（best-of）+ 刷新排行榜
     try {
-      const res = await dbSubmitAttempt(room.code, room.name, failed ? null : { diffMs, rawMs });
-      setLocalAttempts(room.code, room.name, res.attempts);
-      // 基础机会全犯规则补送一次，此时不锁定；提示直接追加进刚弹出的犯规弹窗
-      const granted = maybeGrantBonus(res.attempts, res.bestDiff);
-      if (granted) FailModal.append('<div class="fm-bonus">' + CONFIG.BONUS_MESSAGE + '<br><span style="font-weight:600;font-size:13px;">已额外补送 1 次机会</span></div>');
-      updateAttemptsUI(res.attempts, res.bestDiff, res.bestRaw);
-      if (!granted && res.attempts >= effectiveCap()) lockRoom();
+      await dbSubmitAttempt(room.code, room.name, failed ? null : { diffMs, rawMs });
       await loadLeaderboard();
     } catch (err){
       console.error(err);
@@ -825,7 +873,7 @@ const challengeTimer = makeTimer({
   },
 });
 
-function updateAttemptsUI(used, bestDiff, bestRaw){
+function updateAttemptsUI(used, bestRaw){
   $('room-attempts').textContent = used + '/' + effectiveCap();
   $('room-best').textContent = (bestRaw != null) ? (fmtMs(bestRaw) + ' 秒') : '—';
 }
@@ -857,6 +905,7 @@ async function enterRoom({ code, name, isHost, hostToken }){
   $('room-name').textContent = name;
   $('room-best').textContent = '—';
   $('c-verdict').innerHTML = '';
+  renderHistory();
 
   // 房主才显示分享 + 控制卡片
   $('host-card').hidden = !isHost;
@@ -866,25 +915,32 @@ async function enterRoom({ code, name, isHost, hostToken }){
     $('share-host').value = hostLink(code, hostToken);
   }
 
-  // 恢复本机已用次数 + 当前最好成绩
+  // 恢复本机已用次数 + 当前最好成绩（显示优先用本机记录）
   let used = getLocalAttempts(code, name);
-  let bestDiff = null, bestRaw = null;
+  let dbBestRaw = null;
   try {
     const mine = await dbGetMyScore(code, name);
     if (mine){
       used = Math.max(used, mine.attempts || 0);
-      bestDiff = mine.best_diff_ms; bestRaw = mine.best_raw_ms;
+      dbBestRaw = mine.best_raw_ms;
       setLocalAttempts(code, name, used);
     }
-    updateAttemptsUI(used, bestDiff, bestRaw);
     const r = await dbGetRoom(code);
     applyClosedState(r ? r.status === 'closed' : false);
   } catch(err){ console.error(err); }
 
-  // 重进时若基础机会已全犯规，补送机会
-  if (maybeGrantBonus(used, bestDiff)) setTimeout(() => alert(CONFIG.BONUS_MESSAGE), 60);
-  updateAttemptsUI(used, bestDiff, bestRaw);
-  if (used >= effectiveCap()) lockRoom();
+  const localBest = localBestRaw(code, name);
+  updateAttemptsUI(used, localBest != null ? localBest : dbBestRaw);
+
+  // 重进时若基础机会已全犯规、还没补送过，补送机会（弹窗确认后再玩）
+  if (!room.bonus && used >= CONFIG.ATTEMPTS && !historyHasValid(code, name)){
+    room.bonus = true;
+    localStorage.setItem(bonusKey(code, name), '1');
+    updateAttemptsUI(used, localBest != null ? localBest : dbBestRaw);
+    challengeTimer.hold(mercyHtml(), () => {});
+  } else if (used >= effectiveCap()){
+    lockRoom();
+  }
 
   show('room');
   await loadLeaderboard();
@@ -1056,18 +1112,21 @@ $('host-newround').addEventListener('click', async () => {
   if (!confirm('开新一局会清空本房间所有成绩、重置每人的机会。确定？')) return;
   try {
     await dbNewRound(room.code);
-    // 清掉本机所有该房间的次数 / 补送机会记忆
+    // 清掉本机所有该房间的次数 / 补送 / 首次超时 / 成绩记录
     for (let i = localStorage.length - 1; i >= 0; i--){
       const k = localStorage.key(i);
       if (k && (k.startsWith('qiwang_attempts_' + room.code + '_') ||
-                k.startsWith('qiwang_bonus_' + room.code + '_'))) localStorage.removeItem(k);
+                k.startsWith('qiwang_bonus_' + room.code + '_') ||
+                k.startsWith('qiwang_ot_' + room.code + '_') ||
+                k.startsWith('qiwang_hist_' + room.code + '_'))) localStorage.removeItem(k);
     }
     room.bonus = false;
     roomLocked = false; $('c-space').disabled = false; $('c-lock-hint').hidden = true;
     $('announce-card').hidden = true;
     applyClosedState(false);
     setLocalAttempts(room.code, room.name, 0);
-    updateAttemptsUI(0, null, null);
+    updateAttemptsUI(0, null);
+    renderHistory();
     challengeTimer.reset();
     $('c-verdict').innerHTML = '';
     await loadLeaderboard();
