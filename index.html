@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>AINFINITY 第一届『饮料王』争霸赛</title>
+<style>
+  /* ============================================================
+     主题变量（颜色都从这里走，方便整体换色）
+     ============================================================ */
+  :root{
+    --brand-teal: #35B8B0;   /* 计时数字 / 主色，会被 JS 用 CONFIG.BRAND_TEAL 覆盖 */
+    --ink: #1A1A1A;          /* 标题深色 */
+    --bg: #FFFFFF;           /* 纯白背景 */
+    --muted: #8A8A8A;        /* 次要文字 */
+    --line: #ECECEC;         /* 分隔线 */
+    --soft: #F6F7F7;         /* 卡片底 */
+    --gold: #C8A24A;         /* 饮料王金色 */
+    --danger: #D9534F;
+    --shadow: 0 1px 3px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.05);
+    --radius: 16px;
+  }
+
+  *{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    line-height: 1.5;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overscroll-behavior: none;
+  }
+
+  .wrap{ width:100%; max-width: 540px; padding: 18px 18px 40px; }
+
+  /* 顶部 */
+  header{ text-align:center; margin: 8px 0 18px; }
+  .kicker{ font-size: 13px; letter-spacing: .22em; color: var(--ink); font-weight: 700; opacity:.85; }
+  h1{ font-size: clamp(19px, 5.4vw, 24px); margin: 8px 0 0; font-weight: 800; color: var(--ink); }
+  h1 .q{ color: var(--brand-teal); }
+
+  /* 视图切换 */
+  .view{ display:none; }
+  .view.active{ display:block; animation: fade .25s ease both; }
+  @keyframes fade{ from{opacity:0; transform: translateY(6px);} to{opacity:1; transform:none;} }
+
+  /* 卡片 */
+  .card{
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 20px;
+    margin: 14px 0;
+  }
+  .card.soft{ background: var(--soft); box-shadow:none; }
+
+  /* 计时区 */
+  .timer-wrap{ text-align:center; padding: 26px 8px 10px; }
+  .timer{
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+    font-family: "SF Mono", ui-monospace, "Menlo", "Consolas", monospace;
+    font-weight: 700;
+    font-size: clamp(56px, 18vw, 96px);
+    color: var(--brand-teal);
+    line-height: 1.05;
+    letter-spacing: .01em;
+  }
+  .timer .unit{ font-size: .34em; color: var(--brand-teal); opacity:.7; margin-left: 6px; font-weight:700; }
+  .target-hint{ color: var(--muted); font-size: 14px; margin-top: 6px; }
+
+  /* 评价弹出 */
+  .verdict{ min-height: 30px; text-align:center; margin: 10px 0 4px; }
+  .verdict .line{ font-size: 18px; font-weight: 800; }
+  .verdict .detail{ color: var(--muted); font-size: 14px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .pop{ animation: pop .42s cubic-bezier(.2,.9,.25,1.4) both; }
+  @keyframes pop{ 0%{opacity:0; transform: scale(.8);} 60%{opacity:1; transform: scale(1.06);} 100%{transform:scale(1);} }
+  .tier-god .line{ color: var(--brand-teal); }
+  .tier-great .line{ color: #2E9E97; }
+  .tier-ok .line{ color: var(--ink); }
+  .tier-bad .line{ color: var(--danger); }
+
+  /* 大空格键按钮 */
+  .spacebar{
+    width:100%;
+    border: none;
+    border-radius: 14px;
+    background: var(--brand-teal);
+    color: #fff;
+    font-size: 19px;
+    font-weight: 800;
+    padding: 20px;
+    cursor: pointer;
+    box-shadow: 0 6px 0 rgba(0,0,0,.12), var(--shadow);
+    transition: transform .06s ease, box-shadow .06s ease, background .15s ease;
+    touch-action: manipulation;
+    user-select: none;
+    margin-top: 10px;
+  }
+  .spacebar small{ display:block; font-weight:600; opacity:.85; font-size: 12px; margin-top: 4px; letter-spacing:.04em; }
+  .spacebar:focus-visible{ outline: 3px solid #1A1A1A; outline-offset: 3px; }
+  .spacebar.pressed{ transform: translateY(4px); box-shadow: 0 2px 0 rgba(0,0,0,.12); }
+  .spacebar.running{ background:#E8534E; }
+  .spacebar:disabled{ background:#C9D2D1; cursor:not-allowed; box-shadow:none; color:#fff; }
+
+  /* 通用按钮 */
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:6px;
+    border:1px solid var(--line); background:#fff; color:var(--ink);
+    border-radius:10px; padding:11px 16px; font-size:15px; font-weight:700;
+    cursor:pointer; transition: background .12s, border-color .12s, transform .06s;
+  }
+  .btn:hover{ background: var(--soft); }
+  .btn:active{ transform: translateY(1px); }
+  .btn:focus-visible{ outline:3px solid var(--brand-teal); outline-offset:2px; }
+  .btn.primary{ background: var(--brand-teal); border-color: var(--brand-teal); color:#fff; }
+  .btn.primary:hover{ filter: brightness(.96); background: var(--brand-teal); }
+  .btn.ghost{ background:transparent; border-color:transparent; color: var(--muted); }
+  .btn.danger{ color: var(--danger); border-color: #F0D2D1; }
+  .btn.block{ width:100%; }
+  .btn-row{ display:flex; gap:10px; flex-wrap:wrap; }
+  .btn-row > .btn{ flex:1; }
+
+  /* 输入 */
+  label.field{ display:block; margin: 12px 0 0; }
+  label.field span{ display:block; font-size:13px; color:var(--muted); margin-bottom:6px; }
+  input[type=text]{
+    width:100%; padding:13px 14px; border:1px solid #DADDDD; border-radius:10px;
+    font-size:16px; color:var(--ink); background:#fff;
+  }
+  input[type=text]:focus{ outline:none; border-color: var(--brand-teal); box-shadow:0 0 0 3px rgba(53,184,176,.18); }
+
+  /* 首页两个大入口 */
+  .home-modes{ display:grid; gap:14px; margin-top: 6px; }
+  .mode-tile{ text-align:left; padding:20px; }
+  .mode-tile h3{ margin:0 0 4px; font-size:18px; }
+  .mode-tile p{ margin:0; color:var(--muted); font-size:14px; }
+  .mode-tile .emoji{ font-size:26px; }
+
+  /* 排行榜 */
+  .lb-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px; }
+  .lb-head h3{ margin:0; font-size:17px; }
+  table{ width:100%; border-collapse: collapse; margin-top:6px; }
+  th,td{ text-align:left; padding:11px 8px; border-bottom:1px solid var(--line); font-size:15px; }
+  th{ color:var(--muted); font-weight:600; font-size:12.5px; text-transform:none; }
+  td.num, th.num{ text-align:right; font-variant-numeric: tabular-nums; }
+  tr.king{ background: linear-gradient(0deg, rgba(200,162,74,.10), rgba(200,162,74,.10)); }
+  tr.king td:first-child{ font-weight:800; }
+  .king-tag{ color: var(--gold); font-weight:800; white-space:nowrap; }
+  .me-tag{ color: var(--brand-teal); font-size:12px; font-weight:700; margin-left:4px; }
+  .rank{ font-weight:700; color:var(--muted); }
+  .empty{ text-align:center; color:var(--muted); padding: 26px 8px; }
+
+  /* 杂项 */
+  .meta-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+  .chip{ display:inline-flex; align-items:center; gap:6px; background:var(--soft); border-radius:999px; padding:6px 12px; font-size:13px; font-weight:700; }
+  .chip b{ color: var(--brand-teal); }
+  .pill-attempts{ font-variant-numeric: tabular-nums; }
+  .share-box{ display:flex; gap:8px; margin-top:8px; }
+  .share-box input{ flex:1; font-size:13px; padding:10px 12px; }
+  .hint{ font-size:13px; color:var(--muted); margin-top:8px; }
+  .note{ font-size:13px; background:#FFF8E6; border:1px solid #F0E3B8; color:#7A5E12; border-radius:10px; padding:10px 12px; margin-top:12px; }
+  .err{ color: var(--danger); font-size:13.5px; margin-top:10px; min-height: 18px; }
+  .ok-msg{ color:#2E9E97; font-size:13.5px; margin-top:10px; }
+  .topbar{ display:flex; align-items:center; gap:8px; margin-bottom:2px; }
+  .closed-banner{ background:#EEF6F5; border:1px solid #CFE8E5; color:#1f6e69; border-radius:10px; padding:10px 12px; font-size:14px; font-weight:700; margin-bottom:10px; }
+  .divider{ height:1px; background:var(--line); margin:16px 0; border:0; }
+  .sr-only{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+  footer{ color:var(--muted); font-size:12px; text-align:center; margin-top: 18px; }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="kicker">AINFINITY</div>
+    <h1>AINFINITY 第一届<span class="q">『饮料王』</span>争霸赛</h1>
+  </header>
+
+  <!-- ============================ 首页 ============================ -->
+  <section id="view-home" class="view active">
+    <div class="home-modes">
+      <button class="card mode-tile" id="go-practice">
+        <div class="emoji">🎯</div>
+        <h3>自由练习</h3>
+        <p>不记名、不上榜，随便玩。试试你停在 10.000 秒有多准。</p>
+      </button>
+      <button class="card mode-tile" id="go-challenge">
+        <div class="emoji">👑</div>
+        <h3>挑战赛</h3>
+        <p>建房间、发链接，每人 3 次取最好成绩。前两名当『饮料王』，决定下半个月喝什么。</p>
+      </button>
+    </div>
+    <p class="hint">规则：按一下开始计时，再按一下停止。越接近 <b>10.000 秒</b> 越强；提前或超过都按差值算。</p>
+  </section>
+
+  <!-- ============================ 自由练习 ============================ -->
+  <section id="view-practice" class="view">
+    <div class="topbar">
+      <button class="btn ghost" data-home>← 返回</button>
+      <strong>自由练习</strong>
+    </div>
+
+    <div class="card">
+      <div class="timer-wrap">
+        <div class="timer" id="p-timer">0.000<span class="unit">秒</span></div>
+        <div class="target-hint">目标：停在 <b>10.000</b> 秒</div>
+      </div>
+      <div class="verdict" id="p-verdict" aria-live="polite"></div>
+
+      <button class="spacebar" id="p-space" aria-label="开始或停止计时（也可按空格键）">
+        开始
+        <small>按 空格键 / 点这里</small>
+      </button>
+
+      <div class="btn-row" style="margin-top:12px;">
+        <button class="btn" id="p-again" hidden>再来一次</button>
+      </div>
+
+      <div class="meta-row" style="margin-top:14px;">
+        <span class="chip">本机最佳 <b id="p-best">—</b></span>
+        <button class="btn ghost" id="p-clear-best" title="清除本机最佳">清除</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ 挑战赛：大厅（建/加入房间） ============================ -->
+  <section id="view-lobby" class="view">
+    <div class="topbar">
+      <button class="btn ghost" data-home>← 返回</button>
+      <strong>挑战赛</strong>
+    </div>
+
+    <div class="card">
+      <h3 style="margin:0 0 2px;">发起挑战（成为房主）</h3>
+      <p class="hint" style="margin-top:2px;">建一个房间，把加入链接发到群里。房主链接能结算和开新局，请自己收好。</p>
+      <label class="field">
+        <span>你的名字</span>
+        <input type="text" id="host-name" maxlength="16" placeholder="例如：阿强" autocomplete="off" />
+      </label>
+      <button class="btn primary block" id="create-room" style="margin-top:12px;">生成房间</button>
+      <div class="err" id="create-err"></div>
+    </div>
+
+    <div class="card soft">
+      <h3 style="margin:0 0 2px;">加入挑战</h3>
+      <p class="hint" style="margin-top:2px;">有链接直接点开就会自动带入房间号；也可以手动填。</p>
+      <label class="field">
+        <span>房间号</span>
+        <input type="text" id="join-code" maxlength="8" placeholder="例如：K7M9" autocomplete="off" style="text-transform:uppercase;" />
+      </label>
+      <label class="field">
+        <span>你的名字</span>
+        <input type="text" id="join-name" maxlength="16" placeholder="例如：小李" autocomplete="off" />
+      </label>
+      <button class="btn primary block" id="join-room" style="margin-top:12px;">加入房间</button>
+      <div class="err" id="join-err"></div>
+    </div>
+
+    <div class="note" id="cfg-warn" hidden>
+      ⚠️ 还没配置 Supabase（顶部 CONFIG 里的 URL / KEY）。挑战赛排行榜需要配置后才能用，自由练习不受影响。
+    </div>
+  </section>
+
+  <!-- ============================ 挑战赛：房间内 ============================ -->
+  <section id="view-room" class="view">
+    <div class="topbar">
+      <button class="btn ghost" data-home>← 退出</button>
+      <strong>挑战赛房间</strong>
+    </div>
+
+    <div class="card">
+      <div class="meta-row">
+        <span class="chip">房间号 <b id="room-code">—</b></span>
+        <span class="chip">玩家 <b id="room-name">—</b></span>
+        <span class="chip pill-attempts">机会 <b id="room-attempts">0/3</b></span>
+      </div>
+
+      <div id="room-closed" class="closed-banner" hidden>🏁 本局已结算，排行榜已冻结。</div>
+
+      <div class="timer-wrap">
+        <div class="timer" id="c-timer">0.000<span class="unit">秒</span></div>
+        <div class="target-hint">目标：停在 <b>10.000</b> 秒 · 当前最好 <b id="room-best">—</b></div>
+      </div>
+      <div class="verdict" id="c-verdict" aria-live="polite"></div>
+
+      <button class="spacebar" id="c-space" aria-label="开始或停止计时（也可按空格键）">
+        开始
+        <small>按 空格键 / 点这里</small>
+      </button>
+
+      <p class="hint" id="c-lock-hint" hidden>你的 3 次机会已用完，已记录最好成绩。看排行榜吧 👇</p>
+    </div>
+
+    <!-- 分享链接（房主可见） -->
+    <div class="card soft" id="share-card" hidden>
+      <h3 style="margin:0 0 8px;">分享给同事</h3>
+      <span style="font-size:13px;color:var(--muted);">加入链接（发群里）</span>
+      <div class="share-box">
+        <input type="text" id="share-join" readonly />
+        <button class="btn" data-copy="share-join">复制</button>
+      </div>
+      <span style="font-size:13px;color:var(--muted);display:block;margin-top:10px;">房主专属链接（只有它能结算/开新局，别发群）</span>
+      <div class="share-box">
+        <input type="text" id="share-host" readonly />
+        <button class="btn" data-copy="share-host">复制</button>
+      </div>
+    </div>
+
+    <!-- 排行榜 -->
+    <div class="card">
+      <div class="lb-head">
+        <h3>🏆 排行榜</h3>
+        <div class="btn-row" style="flex:0 0 auto;">
+          <button class="btn" id="lb-refresh">刷新</button>
+        </div>
+      </div>
+      <div id="lb-body"></div>
+    </div>
+
+    <!-- 房主控制 -->
+    <div class="card soft" id="host-card" hidden>
+      <h3 style="margin:0 0 8px;">房主控制</h3>
+      <div class="btn-row">
+        <button class="btn primary" id="host-close">结算 / 公布结果</button>
+        <button class="btn danger" id="host-newround">开新一局（清空）</button>
+      </div>
+      <div class="ok-msg" id="host-msg"></div>
+      <p class="hint">结算会冻结排行榜并钦定前两名。开新一局会清空本房间成绩、重置每个人的 3 次机会。</p>
+    </div>
+  </section>
+
+  <footer>越接近 10.000 秒越强 · 数字露在外面，真要较真就让前几名现场决赛 😼</footer>
+</div>
+
+<!-- Supabase JS（CDN）。没配置时不影响自由练习。 -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+/* ============================================================================
+   CONFIG —— 你大概率只需要改这一块
+   ============================================================================ */
+const CONFIG = {
+  // ↓↓↓ 填你的 Supabase 项目（见 README）
+  SUPABASE_URL:      'https://YOUR-PROJECT.supabase.co',
+  SUPABASE_ANON_KEY: 'YOUR-ANON-KEY',
+
+  TARGET_SECONDS: 10,     // 目标秒数
+  DECIMALS: 3,            // 显示小数位（可改 4，但第 4 位只是装饰，计时精度按 3 位算分）
+  ATTEMPTS: 3,            // 挑战赛每人机会数
+  WINNER_COUNT: 2,        // 前几名当『饮料王』
+  ROOM_CODE_LEN: 4,       // 房间号位数（4 更好念 / 6 更不易撞，改这个数字即可）
+
+  BRAND_TEAL: '#35B8B0',  // 主色 / 计时数字颜色
+  INK: '#1A1A1A',         // 标题深色
+
+  // 四档评价阈值（按 |停止时间 − 目标| 的“秒”计；放宽/收紧改这里）
+  // 数字全程可见，大家能盯着点，故默认收紧一档让“饮料王”更有含金量；
+  // 看到真实成绩分布后随时回调这几个数即可。
+  TIERS: {
+    GOD:   0.010,   // 神级 ≤ 10 毫秒
+    GREAT: 0.040,   // 厉害 ≤ 40 毫秒
+    OK:    0.120,   // 一般 ≤ 120 毫秒；超过即“笨”
+  },
+
+  // 每档多条文案，随机抽一条
+  VERDICTS: {
+    god:   ['10.000，裁判看了都沉默', '我怀疑你体内装了块原子钟', '建议改行去瑞士做钟表'],
+    great: ['稳如老狗，时间感拉满', '身体里是有节拍器吧', '饮料王预定了属于是'],
+    ok:    ['还行，没翻车但也没惊艳', '中规中矩，离封王还差点意思', '时间它不太听你的'],
+    bad:   ['你这是按了个寂寞？', '10 秒在你这儿是个抽象概念是吧', '心里默数的那个数，它骗了你', '这成绩，饮料还是让别人定吧'],
+  },
+};
+
+/* ============================================================================
+   主题色应用
+   ============================================================================ */
+document.documentElement.style.setProperty('--brand-teal', CONFIG.BRAND_TEAL);
+document.documentElement.style.setProperty('--ink', CONFIG.INK);
+
+const TARGET_MS = CONFIG.TARGET_SECONDS * 1000;
+const $ = (id) => document.getElementById(id);
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+/* 把毫秒数格式化成 “秒.小数” 字符串（不带单位） */
+function fmtMs(ms){
+  return (ms / 1000).toFixed(CONFIG.DECIMALS);
+}
+/* 渲染计时数字（带“秒”小单位） */
+function renderTimer(el, ms){
+  el.innerHTML = fmtMs(ms) + '<span class="unit">秒</span>';
+}
+
+/* 评价分档：返回 {tier, cls, line} */
+function evaluate(diffMs){
+  const d = Math.abs(diffMs) / 1000; // 秒
+  let key, cls;
+  if (d <= CONFIG.TIERS.GOD)        { key='god';   cls='tier-god'; }
+  else if (d <= CONFIG.TIERS.GREAT) { key='great'; cls='tier-great'; }
+  else if (d <= CONFIG.TIERS.OK)    { key='ok';    cls='tier-ok'; }
+  else                              { key='bad';   cls='tier-bad'; }
+  return { tier:key, cls, line: pick(CONFIG.VERDICTS[key]) };
+}
+
+/* ============================================================================
+   计时器引擎（一个状态机，被练习/挑战两处复用）
+   状态: idle -> running -> stopped -> (reset) idle
+   ============================================================================ */
+function makeTimer({ timerEl, verdictEl, buttonEl, onStop }){
+  let state = 'idle';
+  let t0 = 0;
+  let raf = 0;
+
+  function loop(){
+    const ms = performance.now() - t0;
+    renderTimer(timerEl, ms);
+    raf = requestAnimationFrame(loop);
+  }
+
+  function setButton(){
+    buttonEl.classList.toggle('running', state === 'running');
+    const labelMap = { idle:'开始', running:'停止', stopped:'开始' };
+    buttonEl.firstChild.textContent = labelMap[state] + ' ';
+  }
+
+  function start(){
+    if (state !== 'idle') return;
+    state = 'running';
+    verdictEl.innerHTML = '';
+    verdictEl.className = 'verdict';
+    t0 = performance.now();
+    renderTimer(timerEl, 0);
+    raf = requestAnimationFrame(loop);
+    setButton();
+  }
+
+  function stop(){
+    if (state !== 'running') return;
+    state = 'stopped';
+    cancelAnimationFrame(raf);
+    const elapsed = performance.now() - t0;
+    const ms = Math.round(elapsed);                 // 计分用整毫秒
+    renderTimer(timerEl, ms);
+    const diff = ms - TARGET_MS;                     // 带符号差（毫秒）
+    showVerdict(diff);
+    setButton();
+    if (onStop) onStop({ rawMs: ms, diffMs: Math.abs(diff), signedDiffMs: diff });
+  }
+
+  function showVerdict(signedDiff){
+    const ev = evaluate(signedDiff);
+    const sign = signedDiff > 0 ? '超出' : (signedDiff < 0 ? '提前' : '正好');
+    const absSec = (Math.abs(signedDiff)/1000).toFixed(CONFIG.DECIMALS);
+    verdictEl.className = 'verdict pop ' + ev.cls;
+    verdictEl.innerHTML =
+      '<div class="line">' + ev.line + '</div>' +
+      '<div class="detail">本次 ' + fmtMs(TARGET_MS + signedDiff) + ' 秒 · ' +
+      (signedDiff === 0 ? '正好命中 🎯' : (sign + ' ' + absSec + ' 秒')) + '</div>';
+  }
+
+  function reset(){
+    state = 'idle';
+    cancelAnimationFrame(raf);
+    renderTimer(timerEl, 0);
+    setButton();
+  }
+
+  // 一个动作：按状态切换
+  function toggle(){
+    if (state === 'idle') start();
+    else if (state === 'running') stop();
+    else if (state === 'stopped') { /* stopped 时按钮充当“再来” */ reset(); start(); }
+  }
+
+  // 按钮按压动画 + 点击
+  buttonEl.addEventListener('pointerdown', () => buttonEl.classList.add('pressed'));
+  ['pointerup','pointerleave','pointercancel'].forEach(e =>
+    buttonEl.addEventListener(e, () => buttonEl.classList.remove('pressed')));
+  buttonEl.addEventListener('click', () => { toggle(); });
+
+  setButton();
+  renderTimer(timerEl, 0);
+
+  return {
+    toggle, reset,
+    getState: () => state,
+    pressVisual: () => { buttonEl.classList.add('pressed'); setTimeout(()=>buttonEl.classList.remove('pressed'), 90); },
+  };
+}
+
+/* ============================================================================
+   视图路由
+   ============================================================================ */
+let activeView = 'home';
+function show(view){
+  activeView = view;
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  $('view-' + view).classList.add('active');
+  window.scrollTo({ top: 0, behavior: 'auto' });
+}
+document.querySelectorAll('[data-home]').forEach(b =>
+  b.addEventListener('click', () => { stopPolling(); show('home'); }));
+$('go-practice').addEventListener('click', () => show('practice'));
+$('go-challenge').addEventListener('click', () => { refreshShareLinksFromState(); show('lobby'); });
+
+/* ============================================================================
+   全局空格键：只作用于当前可见的计时视图
+   - 屏蔽页面滚动
+   - 长按连发只认第一下（event.repeat）
+   ============================================================================ */
+window.addEventListener('keydown', (e) => {
+  if (e.code !== 'Space' && e.key !== ' ') return;
+  // 别打断正在输入名字/房间号
+  const tag = (document.activeElement && document.activeElement.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+  e.preventDefault();          // 屏蔽空格滚动页面
+  if (e.repeat) return;        // 长按只认第一下
+
+  if (activeView === 'practice') { practiceTimer.pressVisual(); practiceTimer.toggle(); }
+  else if (activeView === 'room' && !roomLocked && !roomClosed) { challengeTimer.pressVisual(); challengeTimer.toggle(); }
+});
+
+/* ============================================================================
+   自由练习
+   ============================================================================ */
+const BEST_KEY = 'qiwang_practice_best_ms';
+function renderPracticeBest(){
+  const v = localStorage.getItem(BEST_KEY);
+  $('p-best').textContent = v == null ? '—' : (fmtMs(Number(v)) + ' 秒');
+}
+const practiceTimer = makeTimer({
+  timerEl: $('p-timer'),
+  verdictEl: $('p-verdict'),
+  buttonEl: $('p-space'),
+  onStop: ({ rawMs }) => {
+    $('p-again').hidden = false;
+    // 本机最佳：离目标差最小者
+    const prev = localStorage.getItem(BEST_KEY);
+    const better = prev == null || Math.abs(rawMs - TARGET_MS) < Math.abs(Number(prev) - TARGET_MS);
+    if (better){ localStorage.setItem(BEST_KEY, String(rawMs)); renderPracticeBest(); }
+  },
+});
+$('p-again').addEventListener('click', () => { practiceTimer.reset(); $('p-again').hidden = true; });
+$('p-clear-best').addEventListener('click', () => { localStorage.removeItem(BEST_KEY); renderPracticeBest(); });
+renderPracticeBest();
+
+/* ============================================================================
+   Supabase 客户端
+   ============================================================================ */
+const CONFIGURED = !/YOUR-PROJECT|YOUR-ANON-KEY/.test(CONFIG.SUPABASE_URL + CONFIG.SUPABASE_ANON_KEY);
+let sb = null;
+if (CONFIGURED && window.supabase){
+  sb = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+}
+if (!CONFIGURED) $('cfg-warn').hidden = false;
+
+/* 数据库操作 ----------------------------------------------------------------- */
+async function dbCreateRoom(code, hostToken){
+  const { error } = await sb.from('rooms').insert({ code, host_token: hostToken, status: 'open' });
+  if (error) throw error;
+}
+async function dbGetRoom(code){
+  const { data, error } = await sb.from('rooms').select('code,status').eq('code', code).maybeSingle();
+  if (error) throw error;
+  return data;
+}
+async function dbGetMyScore(code, name){
+  const { data, error } = await sb.from('scores')
+    .select('attempts,best_diff_ms,best_raw_ms')
+    .eq('room_code', code).eq('name', name).maybeSingle();
+  if (error) throw error;
+  return data;
+}
+/* best-of-N：读旧记录 -> 算最好 -> upsert */
+async function dbSubmitScore(code, name, diffMs, rawMs){
+  const prev = await dbGetMyScore(code, name);
+  const attempts = (prev ? prev.attempts : 0) + 1;
+  let bestDiff = diffMs, bestRaw = rawMs;
+  if (prev && prev.best_diff_ms != null && prev.best_diff_ms <= diffMs){
+    bestDiff = prev.best_diff_ms; bestRaw = prev.best_raw_ms;
+  }
+  const { error } = await sb.from('scores').upsert(
+    { room_code: code, name, best_diff_ms: bestDiff, best_raw_ms: bestRaw, attempts },
+    { onConflict: 'room_code,name' }
+  );
+  if (error) throw error;
+  return { attempts, bestDiff, bestRaw };
+}
+async function dbLeaderboard(code){
+  // attempts>0 才显示（开新一局是把 attempts 重置为 0 来“清空”）
+  const { data, error } = await sb.from('scores')
+    .select('name,best_diff_ms,best_raw_ms,attempts')
+    .eq('room_code', code).gt('attempts', 0)
+    .order('best_diff_ms', { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+async function dbCloseRoom(code){
+  const { error } = await sb.from('rooms').update({ status: 'closed' }).eq('code', code);
+  if (error) throw error;
+}
+/* 开新一局：不能 DELETE（RLS 不给），改为把本房间所有成绩 attempts 归零并重开 */
+async function dbNewRound(code){
+  const r1 = await sb.from('scores')
+    .update({ attempts: 0, best_diff_ms: null, best_raw_ms: null })
+    .eq('room_code', code);
+  if (r1.error) throw r1.error;
+  const r2 = await sb.from('rooms').update({ status: 'open' }).eq('code', code);
+  if (r2.error) throw r2.error;
+}
+
+/* ============================================================================
+   房间号 / token 生成
+   ============================================================================ */
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 去掉 0 O 1 I
+function genCode(len = CONFIG.ROOM_CODE_LEN){
+  let s = '';
+  for (let i = 0; i < len; i++) s += CODE_ALPHABET[Math.floor(Math.random()*CODE_ALPHABET.length)];
+  return s;
+}
+function genToken(){
+  let s = '';
+  for (let i = 0; i < 24; i++) s += CODE_ALPHABET[Math.floor(Math.random()*CODE_ALPHABET.length)];
+  return s;
+}
+
+/* ============================================================================
+   房间状态 + 本机记忆
+   ============================================================================ */
+let room = { code: null, name: null, isHost: false, hostToken: null };
+let roomLocked = false;   // 3 次用完
+let roomClosed = false;   // 已结算
+let pollTimer = null;
+
+const attemptsKey = (code, name) => `qiwang_attempts_${code}_${name}`;
+function getLocalAttempts(code, name){ return Number(localStorage.getItem(attemptsKey(code, name)) || 0); }
+function setLocalAttempts(code, name, n){ localStorage.setItem(attemptsKey(code, name), String(n)); }
+
+/* 链接构造 */
+function baseUrl(){ return location.origin + location.pathname; }
+function joinLink(code){ return baseUrl() + '?room=' + code; }
+function hostLink(code, token){ return baseUrl() + '?room=' + code + '&host=' + token; }
+
+/* ============================================================================
+   挑战计时器
+   ============================================================================ */
+const challengeTimer = makeTimer({
+  timerEl: $('c-timer'),
+  verdictEl: $('c-verdict'),
+  buttonEl: $('c-space'),
+  onStop: async ({ rawMs, diffMs }) => {
+    if (roomLocked || roomClosed) return;
+    const used = getLocalAttempts(room.code, room.name);
+    if (used >= CONFIG.ATTEMPTS){ lockRoom(); return; }
+    try {
+      const res = await dbSubmitScore(room.code, room.name, diffMs, rawMs);
+      setLocalAttempts(room.code, room.name, res.attempts);
+      updateAttemptsUI(res.attempts, res.bestDiff, res.bestRaw);
+      if (res.attempts >= CONFIG.ATTEMPTS) lockRoom();
+      await loadLeaderboard();
+    } catch (err){
+      console.error(err);
+      $('c-verdict').innerHTML += '<div class="detail" style="color:var(--danger)">成绩没存上：' + (err.message||err) + '</div>';
+    }
+  },
+});
+
+function updateAttemptsUI(used, bestDiff, bestRaw){
+  $('room-attempts').textContent = used + '/' + CONFIG.ATTEMPTS;
+  if (bestRaw != null) $('room-best').textContent = fmtMs(bestRaw) + ' 秒';
+}
+function lockRoom(){
+  roomLocked = true;
+  $('c-space').disabled = true;
+  $('c-lock-hint').hidden = false;
+}
+function applyClosedState(closed){
+  roomClosed = closed;
+  $('room-closed').hidden = !closed;
+  if (closed){ $('c-space').disabled = true; }
+  else if (!roomLocked){ $('c-space').disabled = false; }
+}
+
+/* ============================================================================
+   进入房间
+   ============================================================================ */
+async function enterRoom({ code, name, isHost, hostToken }){
+  room = { code, name, isHost: !!isHost, hostToken: hostToken || null };
+  roomLocked = false; roomClosed = false;
+  challengeTimer.reset();
+  $('c-space').disabled = false;
+  $('c-lock-hint').hidden = true;
+
+  $('room-code').textContent = code;
+  $('room-name').textContent = name;
+  $('room-best').textContent = '—';
+  $('c-verdict').innerHTML = '';
+
+  // 房主才显示分享 + 控制卡片
+  $('host-card').hidden = !isHost;
+  $('share-card').hidden = !isHost;
+  if (isHost){
+    $('share-join').value = joinLink(code);
+    $('share-host').value = hostLink(code, hostToken);
+  }
+
+  // 恢复本机已用次数 + 当前最好成绩
+  let used = getLocalAttempts(code, name);
+  try {
+    const mine = await dbGetMyScore(code, name);
+    if (mine){
+      used = Math.max(used, mine.attempts || 0);
+      setLocalAttempts(code, name, used);
+      updateAttemptsUI(used, mine.best_diff_ms, mine.best_raw_ms);
+    } else {
+      updateAttemptsUI(used, null, null);
+    }
+    const r = await dbGetRoom(code);
+    applyClosedState(r ? r.status === 'closed' : false);
+  } catch(err){ console.error(err); }
+
+  if (used >= CONFIG.ATTEMPTS) lockRoom();
+
+  show('room');
+  await loadLeaderboard();
+  startPolling();
+}
+
+/* ============================================================================
+   排行榜渲染 + 轮询
+   ============================================================================ */
+async function loadLeaderboard(){
+  if (!sb) return;
+  try {
+    const rows = await dbLeaderboard(room.code);
+    renderLeaderboard(rows);
+  } catch(err){ console.error(err); }
+}
+function renderLeaderboard(rows){
+  const box = $('lb-body');
+  if (!rows.length){
+    box.innerHTML = '<div class="empty">还没人挑战，来当第一个 🥤</div>';
+    return;
+  }
+  let html = '<table><thead><tr>' +
+    '<th style="width:48px;">名次</th><th>名字</th>' +
+    '<th class="num">最好成绩</th><th class="num">差值</th></tr></thead><tbody>';
+  rows.forEach((r, i) => {
+    const isKing = i < CONFIG.WINNER_COUNT;
+    const isMe = r.name === room.name;
+    html += '<tr class="' + (isKing ? 'king' : '') + '">' +
+      '<td><span class="rank">' + (i+1) + '</span></td>' +
+      '<td>' + escapeHtml(r.name) + (isMe ? '<span class="me-tag">（你）</span>' : '') +
+        (isKing ? ' <span class="king-tag">👑 饮料王</span>' : '') + '</td>' +
+      '<td class="num">' + fmtMs(r.best_raw_ms) + '</td>' +
+      '<td class="num">' + (r.best_diff_ms/1000).toFixed(CONFIG.DECIMALS) + '</td>' +
+      '</tr>';
+  });
+  html += '</tbody></table>';
+  box.innerHTML = html;
+}
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function startPolling(){
+  stopPolling();
+  pollTimer = setInterval(async () => {
+    if (activeView !== 'room') return;
+    await loadLeaderboard();
+    try { const r = await dbGetRoom(room.code); if (r) applyClosedState(r.status === 'closed'); } catch(e){}
+  }, 5000);
+}
+function stopPolling(){ if (pollTimer){ clearInterval(pollTimer); pollTimer = null; } }
+$('lb-refresh').addEventListener('click', loadLeaderboard);
+
+/* ============================================================================
+   建房 / 加入 交互
+   ============================================================================ */
+function requireConfigured(errEl){
+  if (!sb){ errEl.textContent = '还没配置 Supabase，挑战赛暂不可用（见 README）。'; return false; }
+  return true;
+}
+
+$('create-room').addEventListener('click', async () => {
+  const errEl = $('create-err'); errEl.textContent = '';
+  const name = $('host-name').value.trim();
+  if (!name){ errEl.textContent = '先填个名字吧。'; return; }
+  if (!requireConfigured(errEl)) return;
+
+  $('create-room').disabled = true;
+  try {
+    // 生成不重复的房间号（重试几次）
+    let code = null;
+    for (let i = 0; i < 6; i++){
+      const c = genCode();
+      const existing = await dbGetRoom(c);
+      if (!existing){ code = c; break; }
+    }
+    if (!code){ errEl.textContent = '房间号生成失败，再试一次。'; return; }
+    const token = genToken();
+    await dbCreateRoom(code, token);
+    await enterRoom({ code, name, isHost: true, hostToken: token });
+  } catch(err){
+    console.error(err); errEl.textContent = '建房失败：' + (err.message || err);
+  } finally {
+    $('create-room').disabled = false;
+  }
+});
+
+$('join-room').addEventListener('click', async () => {
+  const errEl = $('join-err'); errEl.textContent = '';
+  const code = $('join-code').value.trim().toUpperCase();
+  const name = $('join-name').value.trim();
+  if (!code){ errEl.textContent = '填一下房间号。'; return; }
+  if (!name){ errEl.textContent = '填一下你的名字。'; return; }
+  if (!requireConfigured(errEl)) return;
+
+  $('join-room').disabled = true;
+  try {
+    const r = await dbGetRoom(code);
+    if (!r){ errEl.textContent = '没找到这个房间，确认下房间号？'; return; }
+    await enterRoom({ code, name, isHost: false });
+  } catch(err){
+    console.error(err); errEl.textContent = '加入失败：' + (err.message || err);
+  } finally {
+    $('join-room').disabled = false;
+  }
+});
+
+/* 复制按钮 */
+document.querySelectorAll('[data-copy]').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const input = $(btn.getAttribute('data-copy'));
+    try { await navigator.clipboard.writeText(input.value); }
+    catch(e){ input.select(); document.execCommand('copy'); }
+    const old = btn.textContent; btn.textContent = '已复制';
+    setTimeout(() => btn.textContent = old, 1200);
+  });
+});
+
+/* ============================================================================
+   房主控制
+   ============================================================================ */
+$('host-close').addEventListener('click', async () => {
+  if (!room.isHost) return;
+  const msg = $('host-msg'); msg.textContent = '';
+  if (!confirm('确定结算并公布结果？排行榜会被冻结。')) return;
+  try {
+    await dbCloseRoom(room.code);
+    applyClosedState(true);
+    await loadLeaderboard();
+    msg.textContent = '已结算，前 ' + CONFIG.WINNER_COUNT + ' 名就是『饮料王』🥤';
+  } catch(err){ console.error(err); msg.textContent = '结算失败：' + (err.message||err); }
+});
+
+$('host-newround').addEventListener('click', async () => {
+  if (!room.isHost) return;
+  const msg = $('host-msg'); msg.textContent = '';
+  if (!confirm('开新一局会清空本房间所有成绩、重置每人 3 次机会。确定？')) return;
+  try {
+    await dbNewRound(room.code);
+    // 清掉本机所有该房间的次数记忆
+    for (let i = localStorage.length - 1; i >= 0; i--){
+      const k = localStorage.key(i);
+      if (k && k.startsWith('qiwang_attempts_' + room.code + '_')) localStorage.removeItem(k);
+    }
+    roomLocked = false; $('c-space').disabled = false; $('c-lock-hint').hidden = true;
+    applyClosedState(false);
+    setLocalAttempts(room.code, room.name, 0);
+    updateAttemptsUI(0, null, null);
+    challengeTimer.reset();
+    $('c-verdict').innerHTML = '';
+    await loadLeaderboard();
+    msg.textContent = '新一局开始，重新挑战吧！';
+  } catch(err){ console.error(err); msg.textContent = '操作失败：' + (err.message||err); }
+});
+
+/* ============================================================================
+   链接自动带入房间号
+   ============================================================================ */
+let pendingHost = null; // {code, token}
+function refreshShareLinksFromState(){ /* 占位：进入大厅时可用 */ }
+
+(function handleIncomingLink(){
+  const params = new URLSearchParams(location.search);
+  const code = (params.get('room') || '').trim().toUpperCase();
+  const host = (params.get('host') || '').trim();
+  if (!code) return;
+
+  // 预填到加入表单
+  $('join-code').value = code;
+  if (host) pendingHost = { code, token: host };
+
+  // 带房间号就直接去大厅
+  show('lobby');
+
+  // 房主链接：自动认领房主身份后，提示填名字即可直接进房
+  if (host){
+    $('host-name').placeholder = '你是房主，填个名字直接进房';
+    // 房主进房按钮逻辑：用 create 区域的名字
+    $('create-room').textContent = '以房主身份进入房间';
+    $('create-room').onclick = async () => {
+      const errEl = $('create-err'); errEl.textContent = '';
+      const name = $('host-name').value.trim();
+      if (!name){ errEl.textContent = '先填个名字。'; return; }
+      if (!requireConfigured(errEl)) return;
+      try {
+        const r = await dbGetRoom(code);
+        if (!r){ errEl.textContent = '房间不存在或已被删除。'; return; }
+        await enterRoom({ code, name, isHost: true, hostToken: host });
+      } catch(err){ errEl.textContent = '进入失败：' + (err.message||err); }
+    };
+  }
+})();
+</script>
+</body>
+</html>
